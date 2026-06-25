@@ -166,21 +166,79 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
-      - name: SSH deploy to VM
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Copy serve.py to VM
+        uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VM_HOST }}
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
+          source: "src/serve.py"
+          target: "/home/${{ secrets.VM_USER }}/src"
+          strip_components: 1
+
+      - name: SSH deploy to VM
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          CLOUD_BUCKET: ${{ secrets.CLOUD_BUCKET }}
+          CLOUD_CREDENTIALS: ${{ secrets.CLOUD_CREDENTIALS }}
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          envs: CLOUD_BUCKET,CLOUD_CREDENTIALS
           script: |
-            # TODO 7: Restart service mlops-serve tren VM.
-            # TODO 8: Cho server san sang roi goi curl /health de xac nhan.
-            #         Neu health check that bai sau nhieu lan thu, thoat voi exit 1.
-            #
-            # Goi y:
-            #   sudo systemctl restart mlops-serve
-            #   sleep 5
-            #   curl -sf http://localhost:8000/health && echo "Health check passed." || exit 1
+            # Create src folder if not exists
+            mkdir -p ~/src
+
+            # Install jq if missing
+            sudo apt-get update && sudo apt-get install -y jq || true
+            
+            # Parse AWS credentials from JSON secret
+            AWS_ACCESS_KEY_ID=$(echo $CLOUD_CREDENTIALS | jq -r '.aws_access_key_id')
+            AWS_SECRET_ACCESS_KEY=$(echo $CLOUD_CREDENTIALS | jq -r '.aws_secret_access_key')
+            
+            # Install python dependencies if missing
+            sudo apt-get install -y python3-pip python3-pandas || true
+            sudo pip3 install boto3 fastapi uvicorn joblib scikit-learn pandas --break-system-packages || sudo pip3 install boto3 fastapi uvicorn joblib scikit-learn pandas || true
+            
+            # Write systemd service file with S3 and AWS environment variables
+            sudo tee /etc/systemd/system/mlops-serve.service > /dev/null <<EOF
+            [Unit]
+            Description=MLOps Model Inference Server
+            After=network.target
+
+            [Service]
+            User=$USER
+            WorkingDirectory=/home/$USER
+            Environment="S3_BUCKET=$CLOUD_BUCKET"
+            Environment="AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID"
+            Environment="AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
+            Environment="AWS_DEFAULT_REGION=ap-southeast-1"
+            ExecStart=/usr/bin/python3 /home/$USER/src/serve.py
+            Restart=always
+            RestartSec=5
+
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+
+            # Reload daemon and restart service
+            sudo systemctl daemon-reload
+            sudo systemctl enable mlops-serve
             sudo systemctl restart mlops-serve
+            
+            echo "Waiting for service to start..."
             sleep 5
-            curl -sf http://localhost:8000/health && echo "Health check passed." || exit 1
+            
+            # Verify status and logs if it fails
+            if ! curl -sf http://localhost:8000/health; then
+                echo "=== SERVICE STATUS ==="
+                sudo systemctl status mlops-serve || true
+                echo "=== SERVICE LOGS ==="
+                sudo journalctl -u mlops-serve -n 50 || true
+                exit 1
+            fi
+            echo "Health check passed."
