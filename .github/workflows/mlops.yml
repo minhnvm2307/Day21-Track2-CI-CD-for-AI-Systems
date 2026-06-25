@@ -64,9 +64,11 @@ jobs:
         # AWS:   echo "AWS_ACCESS_KEY_ID=..." >> $GITHUB_ENV  (lay tu secrets)
         #        echo "AWS_SECRET_ACCESS_KEY=..." >> $GITHUB_ENV
         # Azure: echo "AZURE_STORAGE_CONNECTION_STRING=..." >> $GITHUB_ENV
+        env:
+          CLOUD_CREDENTIALS: ${{ secrets.CLOUD_CREDENTIALS }}
         run: |
-          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> $GITHUB_ENV
-          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
+          echo "AWS_ACCESS_KEY_ID=$(echo "$CLOUD_CREDENTIALS" | jq -r '.aws_access_key_id')" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=$(echo "$CLOUD_CREDENTIALS" | jq -r '.aws_secret_access_key')" >> $GITHUB_ENV
           echo "AWS_DEFAULT_REGION=ap-southeast-1" >> $GITHUB_ENV
 
       - name: Pull data with DVC
