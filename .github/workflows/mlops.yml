@@ -202,7 +202,7 @@ jobs:
             
             # Install python dependencies if missing
             sudo apt-get install -y python3-pip python3-pandas || true
-            sudo pip3 install boto3 fastapi uvicorn joblib scikit-learn pandas --break-system-packages || sudo pip3 install boto3 fastapi uvicorn joblib scikit-learn pandas || true
+            sudo pip3 install "numpy<2" pandas boto3 fastapi uvicorn joblib scikit-learn --break-system-packages --upgrade || sudo pip3 install "numpy<2" pandas boto3 fastapi uvicorn joblib scikit-learn --upgrade || true
             
             # Write systemd service file with S3 and AWS environment variables
             sudo tee /etc/systemd/system/mlops-serve.service > /dev/null <<EOF
